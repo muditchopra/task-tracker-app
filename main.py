@@ -29,7 +29,10 @@ class TaskDB(Base):
     completed = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+
 Base.metadata.create_all(bind=engine)
+
+
 # Pydantic models
 class TaskCreate(BaseModel):
     title: str
@@ -44,6 +47,7 @@ class TaskResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 # Database dependency
 def get_db():
     db = SessionLocal()
@@ -52,14 +56,17 @@ def get_db():
     finally:
         db.close()
 
+
 # API endpoints
 @app.get("/")
 def read_root():
     return {"message": "Task Tracker API is running!", "version": "1.0.0"}
 
+
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "timestamp": datetime.utcnow()}
+
 
 @app.post("/tasks", response_model=TaskResponse)
 def create_task(task: TaskCreate, db: Session = Depends(get_db)):
@@ -69,9 +76,11 @@ def create_task(task: TaskCreate, db: Session = Depends(get_db)):
     db.refresh(db_task)
     return db_task
 
+
 @app.get("/tasks", response_model=List[TaskResponse])
 def list_tasks(db: Session = Depends(get_db)):
     return db.query(TaskDB).all()
+
 
 @app.get("/tasks/{task_id}", response_model=TaskResponse)
 def get_task(task_id: int, db: Session = Depends(get_db)):
@@ -79,6 +88,7 @@ def get_task(task_id: int, db: Session = Depends(get_db)):
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     return task
+
 
 @app.put("/tasks/{task_id}", response_model=TaskResponse)
 def update_task(task_id: int, task_update: TaskCreate, db: Session = Depends(get_db)):
@@ -94,6 +104,7 @@ def update_task(task_id: int, task_update: TaskCreate, db: Session = Depends(get
     db.refresh(task)
     return task
 
+
 @app.delete("/tasks/{task_id}")
 def delete_task(task_id: int, db: Session = Depends(get_db)):
     task = db.query(TaskDB).filter(TaskDB.id == task_id).first()
@@ -103,6 +114,7 @@ def delete_task(task_id: int, db: Session = Depends(get_db)):
     db.delete(task)
     db.commit()
     return {"message": "Task deleted successfully"}
+
 
 @app.patch("/tasks/{task_id}/complete")
 def complete_task(task_id: int, db: Session = Depends(get_db)):
@@ -114,6 +126,7 @@ def complete_task(task_id: int, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(task)
     return task
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
