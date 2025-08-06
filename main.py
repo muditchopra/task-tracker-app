@@ -20,6 +20,7 @@ Base = declarative_base()
 # Prometheus monitoring setup
 Instrumentator().instrument(app).expose(app)
 
+
 # Database model
 class TaskDB(Base):
     __tablename__ = "tasks"
@@ -37,6 +38,8 @@ Base.metadata.create_all(bind=engine)
 class TaskCreate(BaseModel):
     title: str
     description: Optional[str] = None
+
+
 class TaskResponse(BaseModel):
     id: int
     title: str
