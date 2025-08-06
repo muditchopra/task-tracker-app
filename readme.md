@@ -1,4 +1,4 @@
-# Task Tracker DevOps Assignment
+# Task Tracker Application
 
 This repository delivers a production-grade, end-to-end DevOps pipeline for the **Task Tracker API**—including infrastructure provisioning, application deployment, security, and observability.
 
@@ -26,7 +26,6 @@ Please ensure the following are available **before** starting the deployment:
 - **Ansible**: v2.16 or newer ([install guide](https://docs.ansible.com/ansible/latest/installation_guide/index.html))
 - **Docker & Docker Compose**: Docker v24+  
 - **GitHub Account with repository for this code**
-- **Personal Access Token (PAT)** with repo and workflow permissions to create GitHub secrets (see below).
 
 ## Deployment Workflow Overview
 
@@ -49,7 +48,9 @@ In your GitHub repository, go to Settings > Secrets and add:
 - `AWS_ACCESS_KEY_ID`  
 - `AWS_SECRET_ACCESS_KEY`  
 - `SSH_PUBLIC_KEY` (the **public** part of your SSH key)
-- `PA_TOKEN` (Personal Access Token with proper permissions; only if you automate secret updates)
+- `EC2_SSH_KEY` (the **private** part of your SSH key)
+- `DOCKER_USERNAME`
+- `DOCKER_PASSWORD`
 
 _**Important:**_  
 **Never commit credentials to source control.**
@@ -59,3 +60,16 @@ _**Important:**_
 From your local machine or via GitHub Actions (recommended):
 
 - **Manual Steps:**
+  - Go to **Action** tab in repo and trigger the `terraform-deploy.yml`. This workflow will create the EC2, Security Group, S3, etc.. and output the public IP.
+- Add the public IP as secret in repo
+  - `EC2_HOST` (the **Public IP** of EC2)
+- Trigger `ci-cd.yml` workflow this will build docker image, push it, and run the ansible playbook on EC2 server. this is required once after terraform resources created with workflow. 
+
+
+## K8S Deployment Instructions
+
+![Architecture Diagram](images/k8s.drawio.svg)
+
+- Setup Jenkins server with EKS config 
+- Create Jenkins job with config `k8s_deployment/prod/Jenkinsfile`
+- Build the job and it will build the Docker image, push it to ECR and deploy the app in EKS cluster.
