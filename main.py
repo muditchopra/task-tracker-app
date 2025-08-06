@@ -23,7 +23,6 @@ Instrumentator().instrument(app).expose(app)
 # Database model
 class TaskDB(Base):
     __tablename__ = "tasks"
-
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True)
     description = Column(String)
@@ -31,12 +30,10 @@ class TaskDB(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 Base.metadata.create_all(bind=engine)
-
 # Pydantic models
 class TaskCreate(BaseModel):
     title: str
     description: Optional[str] = None
-
 class TaskResponse(BaseModel):
     id: int
     title: str
@@ -120,4 +117,3 @@ def complete_task(task_id: int, db: Session = Depends(get_db)):
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
