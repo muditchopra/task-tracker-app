@@ -1,0 +1,148 @@
+---
+- name: Deploy Task Tracker API
+  hosts: task_tracker
+  become: yes
+  gather_facts: yes
+  vars:
+    app_name: task-tracker
+    app_port: 8000
+    docker_image: "task-tracker:latest"
+    app_dir: /opt/task-tracker
+    log_dir: /var/log/task-tracker
+
+  tasks:
+    - name: Ensure application directory exists
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Ensure log directory exists
+      file:
+        path: "{{ log_dir }}"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Copy application files
+      copy:
+        src: "{{ item }}"
+        dest: "{{ app_dir }}/"
+        owner: ubuntu
+        group: ubuntu
+        mode: '0644'
+      loop:
+        - main.py
+        - requirements.txt
+        - Dockerfile
+      notify: restart application
+
+    - name: Configure prometheus scrape configs
+      template:
+        src: prometheus.yml.j2
+        dest: /etc/prometheus/prometheus.yml
+        owner: ubuntu
+        group: ubuntu
+        mode: '0644'
+
+    - name: Copy docker-compose file
+      template:
+        src: docker-compose.yml.j2
+        dest: "{{ app_dir }}/docker-compose.yml"
+        owner: ubuntu
+        group: ubuntu
+        mode: '0644'
+      notify: restart application
+
+    - name: Build Docker image
+      docker_image:
+        name: "{{ docker_image }}"
+        build:
+          path: "{{ app_dir }}"
+          dockerfile: Dockerfile
+        source: build
+        state: present
+      become_user: ubuntu
+
+    - name: Stop existing application containers
+      docker_compose:
+        project_src: "{{ app_dir }}"
+        state: absent
+      become_user: ubuntu
+      ignore_errors: yes
+
+    - name: Start application with Docker Compose
+      docker_compose:
+        project_src: "{{ app_dir }}"
+        state: present
+        pull: yes
+      become_user: ubuntu
+
+    - name: Wait for application to be ready
+      uri:
+        url: "http://localhost:{{ app_port }}/health"
+        method: GET
+        status_code: 200
+      register: result
+      until: result.status == 200
+      retries: 30
+      delay: 10
+
+    - name: Verify Node Exporter is running
+      systemd:
+        name: node_exporter
+        state: started
+        enabled: yes
+
+    - name: Check Node Exporter metrics endpoint
+      uri:
+        url: "http://localhost:9100/metrics"
+        method: GET
+        status_code: 200
+      register: node_exporter_result
+      failed_when: node_exporter_result.status != 200
+
+    - name: Configure log rotation for application
+      template:
+        src: logrotate.j2
+        dest: /etc/logrotate.d/{{ app_name }}
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Create application systemd service
+      template:
+        src: task-tracker.service.j2
+        dest: /etc/systemd/system/{{ app_name }}.service
+        owner: root
+        group: root
+        mode: '0644'
+      notify: 
+        - reload systemd
+        - restart application service
+
+    - name: Enable and start application service
+      systemd:
+        name: "{{ app_name }}"
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+  handlers:
+    - name: restart application
+      docker_compose:
+        project_src: "{{ app_dir }}"
+        restarted: yes
+      become_user: ubuntu
+
+    - name: reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: restart application service
+      systemd:
+        name: "{{ app_name }}"
+        state: restarted

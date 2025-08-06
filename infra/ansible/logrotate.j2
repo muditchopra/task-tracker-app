@@ -1,0 +1,12 @@
+{{ log_dir }}/*.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 644 ubuntu ubuntu
+    postrotate
+        /usr/local/bin/docker-compose -f {{ app_dir }}/docker-compose.yml restart {{ app_name }} 2>/dev/null || true
+    endscript
+}

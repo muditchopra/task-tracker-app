@@ -1,0 +1,143 @@
+#!/usr/bin/env groovy
+
+def accountConf = [
+  "EKS-Cluster" : "123456789"
+]
+
+def repoConf = [
+  "EKS-Cluster" : "task-tracker"
+]
+
+def branchConf = [
+  "EKS-Cluster" : "env/production"
+]
+
+void setParam(String paramName, String paramValue) {
+  def newParams = []
+  newParams.add(new StringParameterValue(paramName, paramValue))
+  $build().addOrReplaceAction($build().getAction(ParametersAction.class).createUpdated(newParams))
+}
+
+
+properties([
+  parameters([
+        string(defaultValue: "", description: 'Which Git Branch to clone?', name: 'GIT_BRANCH'),
+        string(defaultValue: "", description: 'AWS Account Number?', name: 'ACCOUNT'),
+        string(defaultValue: "", description: 'AWS ECR Repository where built docker images will be pushed.', name: 'ECR_REPO_NAME'),
+        string(defaultValue: "git@github.com:muditchopra/task-tracker.git", description: 'Git repo name?', name: 'Git_repo_name'),
+        choice(choices: ['EKS-Cluster'], description: 'Profile name of the Environment?', name: 'Profileenv'),
+        booleanParam(defaultValue: true,description: 'Skip tests while building?', name: 'SkipBuildTests'),
+        choice(choices: ['prod'], description: 'Build env folder for env specific files', name: 'BUILD_ENV')
+  ])
+])
+echo "Selecting Slave Node for deployment"
+
+if (params.Profileenv == 'EKS-Cluster' ) {
+    nodename = "mu-ec-prod-jenkins-ansible-slave-01"
+}
+echo "Show Node : ${nodename}"
+try {
+
+  stage('Clone Repo'){
+    node("${nodename}"){
+      cleanWs()
+
+      if(params.GIT_BRANCH == ""){
+        setParam("GIT_BRANCH",branchConf.get(params.Profileenv));
+      }
+      if(params.ACCOUNT == ""){
+        setParam("ACCOUNT",accountConf.get(params.Profileenv));
+      }
+      if(params.ECR_REPO_NAME == ""){
+        setParam("ECR_REPO_NAME",repoConf.get(params.Profileenv));
+      }
+
+      setParam("BUILD_ENV", "prod");
+
+      checkout([$class: 'GitSCM', branches: [[name: '*/$GIT_BRANCH']], doGenerateSubmoduleConfigurations: false, extensions: [], submoduleCfg: [], userRemoteConfigs: [[url: '${Git_repo_name}']]])
+
+
+    }
+   }
+
+
+   stage('Build Docker Image') {
+    node("${nodename}"){
+
+     sh 'aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin ${ACCOUNT}.dkr.ecr.ap-south-1.amazonaws.com'
+     GIT_COMMIT_ID = sh (
+      script: 'git log -1 --pretty=%H',
+      returnStdout: true
+     ).trim()
+     TIMESTAMP = sh (
+      script: 'date +%Y%m%d%H%M%S',
+      returnStdout: true                                       ).trim()
+     echo "Git commit id: ${GIT_COMMIT_ID}"
+     IMAGETAG="${GIT_COMMIT_ID}-${TIMESTAMP}"
+
+     sh "sudo docker build --build-arg BUILD_ENV=${BUILD_ENV} -t ${ACCOUNT}.dkr.ecr.ap-south-1.amazonaws.com/${ECR_REPO_NAME}:${IMAGETAG} -f ./deployment/Dockerfile ./"
+     sh "sudo docker push ${ACCOUNT}.dkr.ecr.ap-south-1.amazonaws.com/${ECR_REPO_NAME}:${IMAGETAG}"
+
+    }
+   }
+
+  stage('Deploy on k8s') {
+    node("${nodename}"){
+      withEnv(["KUBECONFIG=${JENKINS_HOME}/.kube/${Profileenv}","IMAGE=${ACCOUNT}.dkr.ecr.ap-south-1.amazonaws.com/${ECR_REPO_NAME}:${IMAGETAG}"]){
+      sh "sed -i 's|IMAGE|${IMAGE}|g' deployment/${BUILD_ENV}/k8s/task-tracker-deployment.yaml"
+      sh "kubectl apply -f deployment/${BUILD_ENV}/k8s"
+      DEPLOYMENT = sh (
+        script: 'cat deployment/${BUILD_ENV}/k8s/task-tracker-deployment.yaml | yq -r .metadata.name',
+    returnStdout: true
+     ).trim()
+                     echo "Creating k8s resources..."
+
+                INITIAL_SLEEP_TIME = 30
+                sleep INITIAL_SLEEP_TIME
+                LATEST_POD = sh (
+                        script: "kubectl get pod -l app=$DEPLOYMENT --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1:].metadata.name}'",
+                        returnStdout: true
+                ).trim()
+                echo "Latest POD IS:: ${LATEST_POD}"
+
+                MAX_TIME = 660
+                TIME_ELAPSED = INITIAL_SLEEP_TIME
+                SLEEP_TIME = 30
+                POD_RESTART_COUNT = "0"
+                while(TIME_ELAPSED <= MAX_TIME && POD_RESTART_COUNT.equals("0")) {
+                    POD_READINESS= sh (
+                            script: "kubectl get pod ${LATEST_POD} -o jsonpath='{.status.containerStatuses[0].ready}'",
+                            returnStdout: true
+                    ).trim()
+                    echo "Readiness: ${POD_READINESS}"
+
+                    POD_RESTART_COUNT = sh (
+                            script: "kubectl get pod ${LATEST_POD} -o jsonpath='{.status.containerStatuses[0].restartCount}'",
+                            returnStdout: true
+                    ).trim()
+                    echo "Restart count: ${POD_RESTART_COUNT}"
+
+                    if (POD_READINESS.equals("true")) {
+                        currentBuild.result = "SUCCESS"
+
+                        break
+                    }
+
+                    echo "Time elapsed: ${TIME_ELAPSED}"
+                    TIME_ELAPSED = TIME_ELAPSED + SLEEP_TIME
+                    sleep SLEEP_TIME
+                }
+
+                if (TIME_ELAPSED > MAX_TIME || !POD_RESTART_COUNT.equals("0")) {
+                    echo "Please Refer Below Error logs"
+                    sh "kubectl logs --tail=100 ${LATEST_POD}"
+                    error("Deployment Unsuccessful.")
+                }
+            }
+        }
+    }
+}
+catch (err) {
+    currentBuild.result = "FAILURE"
+    throw err
+}
