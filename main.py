@@ -28,7 +28,6 @@ class TaskDB(Base):
     description = Column(String)
     completed = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-
 Base.metadata.create_all(bind=engine)
 # Pydantic models
 class TaskCreate(BaseModel):
