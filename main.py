@@ -1,12 +1,14 @@
-from fastapi import FastAPI, HTTPException, Depends
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
-from pydantic import BaseModel
 from datetime import datetime
 from typing import List, Optional
+
 import uvicorn
+from fastapi import Depends, FastAPI, HTTPException
 from prometheus_fastapi_instrumentator import Instrumentator
+from pydantic import BaseModel
+from sqlalchemy import (Boolean, Column, DateTime, Integer, String,
+                        create_engine)
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import Session, sessionmaker
 
 app = FastAPI(title="Task Tracker API", version="1.0.0")
 
