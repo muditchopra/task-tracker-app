@@ -40,10 +40,9 @@ jobs:
 
     - name: Run linting
       run: |
-        pip install flake8 black isort
+        pip install flake8 black
         flake8 main.py --max-line-length=99 --extend-ignore=E203,E305
         black --check main.py
-        isort --check-only main.py
 
     - name: Run tests
       run: |

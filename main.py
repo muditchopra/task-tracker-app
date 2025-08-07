@@ -5,8 +5,7 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel
-from sqlalchemy import (Boolean, Column, DateTime, Integer, String,
-                        create_engine)
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, sessionmaker
 
